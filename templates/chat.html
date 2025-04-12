@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <title>💬 RAG Chatbot</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        * { box-sizing: border-box; }
+        html, body {
+            margin: 0; padding: 0; height: 100%;
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f2f5;
+            color: #333;
+        }
+        header {
+            background-color: #ffffff;
+            padding: 1rem 2rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            text-align: center;
+        }
+        header h1 {
+            margin: 0;
+            font-size: 1.5rem;
+            color: #007bff;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            height: calc(100vh - 80px);
+            width: 100%;
+            padding: 1.5rem 2rem;
+        }
+        .chat-box {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            padding: 1rem;
+            background-color: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            overflow-y: auto;
+        }
+        .bubble {
+            padding: 1rem 1.25rem;
+            border-radius: 18px;
+            max-width: 90%;
+            word-wrap: break-word;
+            white-space: pre-wrap;
+            line-height: 1.5;
+            font-size: 0.95rem;
+            position: relative;
+        }
+        .user {
+            align-self: flex-end;
+            background-color: #007bff;
+            color: #fff;
+            border-bottom-right-radius: 4px;
+        }
+        .bot {
+            align-self: flex-start;
+            background-color: #e9edf3;
+            color: #333;
+            border-bottom-left-radius: 4px;
+        }
+        .speech-controls {
+            margin-top: 0.5rem;
+            display: flex;
+            gap: 0.5rem;
+        }
+        .speech-button {
+            font-size: 0.85rem;
+            padding: 0.4rem 0.75rem;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            background-color: #007bff;
+            color: white;
+            transition: background-color 0.2s;
+        }
+        .speech-button:hover {
+            background-color: #0056b3;
+        }
+        form {
+            margin-top: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+        textarea {
+            resize: vertical;
+            min-height: 80px;
+            padding: 1rem;
+            font-size: 1rem;
+            border-radius: 10px;
+            border: 1px solid #ccc;
+            width: 100%;
+            font-family: 'Inter', sans-serif;
+        }
+        textarea:focus {
+            border-color: #007bff;
+            outline: none;
+        }
+        button {
+            align-self: flex-end;
+            padding: 0.75rem 1.5rem;
+            font-size: 1rem;
+            font-weight: 600;
+            color: #fff;
+            background-color: #007bff;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        @media (max-width: 600px) {
+            .container {
+                padding: 1rem;
+            }
+            .bubble {
+                font-size: 0.9rem;
+                padding: 0.8rem 1rem;
+            }
+            button {
+                width: 100%;
+                align-self: stretch;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>💬 RAG Chatbot AI</h1>
+    </header>
+
+    <div class="container">
+        <div id="chatBox" class="chat-box">
+            {% if query %}
+                <div class="bubble user">{{ query }}</div>
+            {% endif %}
+            {% if response %}
+            <div class="bubble bot" id="botBubble">
+                {{ response }}
+                <div class="speech-controls">
+                    <button class="speech-button" onclick="toggleSpeech(this)" data-text="{{ response|e }}">🔊</button>
+                </div>                
+            </div>            
+            {% endif %}
+        </div>
+
+        <form onsubmit="return submitQuery(event)">
+            <textarea id="queryInput" name="query" placeholder="Tulis pertanyaan kamu..."></textarea>
+            <button type="submit">➤ Kirim</button>
+        </form>    
+    </div>
+
+    <script>
+        async function submitQuery(event) {
+            event.preventDefault();
+        
+            const textarea = document.getElementById('queryInput');
+            const query = textarea.value.trim();
+            if (!query) return;
+        
+            // Hapus isi dan placeholder textarea
+            textarea.value = "";
+            textarea.placeholder = "";
+        
+            const chatBox = document.getElementById('chatBox');
+        
+            // Tambahkan bubble pertanyaan user
+            const userBubble = document.createElement('div');
+            userBubble.className = 'bubble user';
+            userBubble.textContent = query;
+            chatBox.appendChild(userBubble);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        
+            // Bubble bot (kosong dulu)
+            const botBubble = document.createElement('div');
+            botBubble.className = 'bubble bot';
+            const botContent = document.createElement('span');
+            botBubble.appendChild(botContent);
+            chatBox.appendChild(botBubble);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        
+            // Buat tombol speech setelah selesai stream
+            const speechBtn = document.createElement('button');
+            speechBtn.className = 'speech-button';
+            speechBtn.textContent = '🔊';
+            speechBtn.onclick = () => toggleSpeech(speechBtn);
+            speechBtn.dataset.text = "";
+            const speechControls = document.createElement('div');
+            speechControls.className = 'speech-controls';
+            speechControls.appendChild(speechBtn);
+        
+            // Kirim ke endpoint stream
+            const formData = new FormData();
+            formData.append('query', query);
+        
+            const response = await fetch("/chat_stream", {
+                method: "POST",
+                body: formData
+            });
+        
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder("utf-8");
+            let fullText = "";
+        
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+        
+                const chunk = decoder.decode(value, { stream: true });
+                fullText += chunk;
+                botContent.textContent += chunk;
+                chatBox.scrollTop = chatBox.scrollHeight;
+            }
+        
+            // Tambahkan tombol speech setelah selesai streaming
+            speechBtn.dataset.text = fullText;
+            botBubble.appendChild(speechControls);
+        }        
+    </script>
+    
+    <script>
+        let utterance = null;
+        let isSpeaking = false;
+    
+        function toggleSpeech(button) {
+            const text = button.dataset.text;
+    
+            if (!window.speechSynthesis) return;
+    
+            if (isSpeaking) {
+                window.speechSynthesis.cancel();
+                button.textContent = '🔊';
+                isSpeaking = false;
+            } else {
+                utterance = new SpeechSynthesisUtterance(text);
+                utterance.lang = 'id-ID';
+                utterance.pitch = 1;
+                utterance.rate = 1;
+    
+                utterance.onend = () => {
+                    button.textContent = '🔊';
+                    isSpeaking = false;
+                };
+    
+                window.speechSynthesis.speak(utterance);
+                button.textContent = '⏹️';
+                isSpeaking = true;
+            }
+        }
+    </script>    
+</body>
+</html>
